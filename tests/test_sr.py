@@ -3230,18 +3230,18 @@ class TestReportNarrative(unittest.TestCase):
 
     def setUp(self):
         # self._codes = [
-        #     codes.LN.History,
+        #     codes.DCM.History,
         #
         # ]
         self._texts = ContainerContentItem(
-                name=codes.LN.History,
+                name=codes.DCM.History,
                 relationship_type=RelationshipTypeValues.CONTAINS,
             )
 
         content = ContentSequence()
         content.append(
             TextContentItem(
-                name=codes.LN.History,
+                name=codes.DCM.History,
                 value="This can be a really long string",
                 relationship_type=RelationshipTypeValues.CONTAINS
             )
@@ -3293,26 +3293,41 @@ class TestBasicTextSR(unittest.TestCase):
         self._department_name = 'department'
         self._manufacturer = 'manufacturer'
         self._texts = ContainerContentItem(
-            name=codes.LN.History,
+            name=codes.DCM.Conclusion,
             relationship_type=RelationshipTypeValues.CONTAINS,
         )
 
-        content = ContentSequence()
-        content.append(
+        texts_content = ContentSequence()
+        # content.append(
+        #     TextContentItem(
+        #         name=codes.LN.History,
+        #         value="This can be a really long string",
+        #         relationship_type=RelationshipTypeValues.CONTAINS
+        #     )
+        # )
+        texts_content.append(
             TextContentItem(
-                name=codes.LN.History,
-                value="This can be a really long string",
-                relationship_type=RelationshipTypeValues.CONTAINS
-            )
-        )
-        content.append(
-            TextContentItem(
-                name=codes.LN.Impressions,
+                name=codes.DCM.Impression,
                 value="Clinician's summary of the report",
                 relationship_type=RelationshipTypeValues.CONTAINS
             )
         )
-        self._texts.ContentSequence = content
+        self._texts.ContentSequence = texts_content
+
+        self._diagnostic_codes = ContainerContentItem(
+            name=codes.DCM.Finding,
+            relationship_type=RelationshipTypeValues.CONTAINS,
+        )
+        diagnostic_content = ContentSequence()
+        diagnostic_content.append(
+            CodeContentItem(
+                name=codes.SCT.Aneurysm,
+                value=codes.SCT.Present,
+                relationship_type=RelationshipTypeValues.CONTAINS
+            )
+        )
+        self._diagnostic_codes = diagnostic_content
+
         observer_person_context = ObserverContext(
             observer_type=codes.DCM.Person,
             observer_identifying_attributes=PersonObserverIdentifyingAttributes(
@@ -3331,7 +3346,7 @@ class TestBasicTextSR(unittest.TestCase):
         )
         print(f'BasicTextSR test_construction_with_report_narrative ')
         report_narrative = ReportNarrative(
-            # codes=self._codes,
+            diagnostic_codes=self._diagnostic_codes,
             texts=[self._texts]
         )
         self._content = BasicDiagnosticTextReport(
@@ -3356,6 +3371,252 @@ class TestBasicTextSR(unittest.TestCase):
         )
         assert report.SOPClassUID == '1.2.840.10008.5.1.4.1.1.88.11'
         report.save_as("test_sr.dcm")
+
+
+    def xxtest_evidence_missing(self):
+        with pytest.raises(ValueError):
+            BasicTextSR(
+                evidence=[],
+                content=self._content,
+                series_instance_uid=self._series_instance_uid,
+                series_number=self._series_number,
+                sop_instance_uid=self._sop_instance_uid,
+                instance_number=self._instance_number,
+                institution_name=self._institution_name,
+                institutional_department_name=self._department_name,
+                manufacturer=self._manufacturer
+            )
+
+class TestBasicTextSR_MICCAI(unittest.TestCase):
+    """
+    This example will disappear after the hackathon is completed.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self._ref_dataset = Dataset()
+        self._ref_dataset.PatientID = '1'
+        self._ref_dataset.PatientName = 'Doe^John'
+        self._ref_dataset.PatientBirthDate = '20000101'
+        self._ref_dataset.PatientSex = 'O'
+        self._ref_dataset.SOPClassUID = '1.2.840.10008.5.1.4.1.1.2.2'
+        self._ref_dataset.SOPInstanceUID = generate_uid()
+        self._ref_dataset.SeriesInstanceUID = generate_uid()
+        self._ref_dataset.StudyInstanceUID = generate_uid()
+        self._ref_dataset.AccessionNumber = '2'
+        self._ref_dataset.StudyID = '3'
+        self._ref_dataset.StudyDate = datetime.now().date()
+        self._ref_dataset.StudyTime = datetime.now().time()
+        self._ref_dataset.ReferringPhysicianName = 'Faust^Heinrich'
+
+        self._series_instance_uid = generate_uid()
+        self._series_number = 3
+        self._sop_instance_uid = generate_uid()
+        self._instance_number = 4
+        self._institution_name = 'institute'
+        self._department_name = 'department'
+        self._manufacturer = 'manufacturer'
+        history = ContainerContentItem(
+            name=codes.DCM.History,
+            relationship_type=RelationshipTypeValues.CONTAINS,
+        )
+        history_content = ContentSequence()
+        history_content.append(
+            TextContentItem(
+                name=codes.DCM.History,
+                value="We need to store clinical ML output on clinical systems with structured data.",
+                relationship_type=RelationshipTypeValues.CONTAINS
+            )
+        )
+        history_content.append(
+            TextContentItem(
+                name=codes.DCM.History,
+                value="Most vendor solutions use ad-hoc data formats.",
+                relationship_type=RelationshipTypeValues.CONTAINS
+            )
+        )
+
+        history_content.append(
+            TextContentItem(
+                name=codes.DCM.History,
+                value="HighDicom python library (on github) provides clean "
+                "APIs for many DICOM objects.",
+                relationship_type=RelationshipTypeValues.CONTAINS
+            )
+        )
+
+        history_content.append(
+            TextContentItem(
+                name=codes.DCM.History,
+                value="However, many clinical systems do not support these advanced DICOM objects. ",
+                relationship_type=RelationshipTypeValues.CONTAINS
+            )
+        )
+        history_content.append(
+            TextContentItem(
+                name=codes.DCM.History,
+                value="Many do support the Basic Text SR (TID 2000) - so that's what we built today.",
+                relationship_type=RelationshipTypeValues.CONTAINS
+            )
+        )
+
+        history.ContentSequence = history_content
+        findings = ContainerContentItem(
+            name=codes.DCM.Findings,
+            relationship_type=RelationshipTypeValues.CONTAINS,
+        )
+        findings_content = ContentSequence()
+
+        findings_content.append(
+            TextContentItem(
+                name=codes.DCM.Finding,
+                value="It works!",
+                relationship_type=RelationshipTypeValues.CONTAINS
+            )
+        )
+        findings_content.append(
+            TextContentItem(
+                name=codes.DCM.Finding,
+                value="More work is needed to complete the library.",
+                relationship_type=RelationshipTypeValues.CONTAINS
+            )
+        )
+        findings_content.append(
+            TextContentItem(
+                name=codes.DCM.Finding,
+                value="Have to add support for observations in TID 2020 (Report Narrative).",
+                relationship_type=RelationshipTypeValues.CONTAINS
+            )
+        )
+        findings.ContentSequence = findings_content
+        conclusions = ContainerContentItem(
+            name=codes.DCM.Conclusions,
+            relationship_type=RelationshipTypeValues.CONTAINS,
+        )
+
+        conclusions_content = ContentSequence()
+
+        conclusions_content.append(
+            TextContentItem(
+                name=codes.DCM.Conclusion,
+                value="It's possible to create DICOM Basic "
+                    "Diagnostic Imaging Reports with highdicom.",
+                relationship_type=RelationshipTypeValues.CONTAINS
+            )
+        )
+        conclusions_content.append(
+            TextContentItem(
+                name=codes.DCM.Conclusion,
+                value="We can test on clinical systems to evaluate use cases.",
+                relationship_type=RelationshipTypeValues.CONTAINS
+            )
+        )
+        conclusions_content.append(
+            TextContentItem(
+                name=codes.DCM.Conclusion,
+                value="Using coded outputs in SR may be very useful for "
+                "storing ML results on existing clinical systems. ",
+                relationship_type=RelationshipTypeValues.CONTAINS
+            )
+        )
+        conclusions_content.append(
+            TextContentItem(
+                name=codes.DCM.Conclusion,
+                value="Most PACS systems can handle Basic Text SRs....",
+                relationship_type=RelationshipTypeValues.CONTAINS
+            )
+        )
+        conclusions_content.append(
+            TextContentItem(
+                name=codes.DCM.Conclusion,
+                value=" but there are workflow issues that need to be investigated.",
+                relationship_type=RelationshipTypeValues.CONTAINS
+            )
+        )
+        "Most PACS systems can handle Basic Text SRs."
+        conclusions.ContentSequence = conclusions_content
+
+        recommendations = ContainerContentItem(
+            name=codes.DCM.Recommendations,
+            relationship_type=RelationshipTypeValues.CONTAINS,
+        )
+
+        recommendations_content = ContentSequence()
+
+        recommendations_content.append(
+            TextContentItem(
+                name=codes.DCM.Recommendation,
+                value="Complete implementation of TID 2000 and 2020 and clean up source code before generating merge request.",
+                relationship_type=RelationshipTypeValues.CONTAINS
+            )
+        )
+
+        recommendations_content.append(
+            TextContentItem(
+                name=codes.DCM.Recommendation,
+                value="Resolve warnings from some coded values, possible change in object nesting.",
+                relationship_type=RelationshipTypeValues.CONTAINS
+            )
+        )
+        recommendations.ContentSequence = recommendations_content
+
+        self._diagnostic_codes = ContainerContentItem(
+            name=codes.DCM.Finding,
+            relationship_type=RelationshipTypeValues.CONTAINS,
+        )
+        diagnostic_content = ContentSequence()
+        diagnostic_content.append(
+            CodeContentItem(
+                name=codes.SCT.Headache,
+                value=codes.SCT.Present,
+                relationship_type=RelationshipTypeValues.CONTAINS
+            )
+        )
+        self._diagnostic_codes = diagnostic_content
+
+
+        observer_device_context = ObserverContext(
+            observer_type=codes.DCM.Device,
+            observer_identifying_attributes=DeviceObserverIdentifyingAttributes(
+                uid=generate_uid(),
+                manufacturer_name="MICCAI Hackathon",
+                model_name="Demo SR for Hackathon"
+            )
+        )
+        observation_context = ObservationContext(
+            observer_device_context=observer_device_context,
+        )
+        self._algorithm_id = AlgorithmIdentification(
+                name="MICCAI Hackathon Basic Text SR test",
+                version="0.1.0",
+                parameters=[]  # Unclear.
+            )
+        report_narrative = ReportNarrative(
+            diagnostic_codes=self._diagnostic_codes,
+            texts=[history, findings, conclusions, recommendations]
+        )
+        self._content = BasicDiagnosticTextReport(
+            observation_context=observation_context,
+            procedure_reported=codes.LN.CTUnspecifiedBodyRegion,
+            report_narratives=[report_narrative]
+
+        )[0]
+
+    def test_construction(self):
+        print(f'BasicTextSR test_construction ')
+        report = BasicTextSR(
+            evidence=[self._ref_dataset],
+            content=self._content,
+            series_instance_uid=self._series_instance_uid,
+            series_number=self._series_number,
+            sop_instance_uid=self._sop_instance_uid,
+            instance_number=self._instance_number,
+            institution_name=self._institution_name,
+            institutional_department_name=self._department_name,
+            manufacturer=self._manufacturer
+        )
+        assert report.SOPClassUID == '1.2.840.10008.5.1.4.1.1.88.11'
+        report.save_as("test_sr_miccai.dcm")
 
 
     def xxtest_evidence_missing(self):

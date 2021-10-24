@@ -4467,7 +4467,7 @@ class ReportNarrative(Template):
 
     def __init__(
         self,
-        codes: Optional[Sequence[CodedConcept]] = None,
+        diagnostic_codes: Optional[Sequence[ContainerContentItem]] = None,
         texts: Optional[Sequence[ContainerContentItem]] = None,
         observations: Optional[Sequence[BasicDiagnosticImagingReportObservations]] = None
     ) -> None:
@@ -4475,7 +4475,7 @@ class ReportNarrative(Template):
 
                 Parameters
                 ----------
-                codes: [highdicom.sr.Code], optional
+                diagnostic_codes: [highdicom.sr.Code], optional
                     CID 7002
                 texts: [highdicom.sr.TextContentItem], optional
                 observations: [BasicDiagnosticImagingReportObservations] TBD
@@ -4483,37 +4483,18 @@ class ReportNarrative(Template):
 
                 """  # noqa: E501
         super().__init__()
-        if codes:  # Need to check type & ensure they are in CID 7002
-            content_codes = ContentSequence()
-            content_codes.extend(codes)
-            self.append(content_codes)
+        if diagnostic_codes:  # Need to check type & ensure they are in CID 7002
+            self.extend(diagnostic_codes)
         if texts:
             # Need to check for CID 7002
-            for text in texts:
-                print(f'type text {type(text)}')
-                self.append(text)
+            self.extend(texts)
+            # for text in texts:
+            #     print(f'type text {type(text)}')
+            #     self.append(text)
         if observations:
             obs_sequence = ContentSequence()
             obs_sequence.extend(observations)
             self.append(obs_sequence)
-
-
-# class ReportHeadings(Template):
-#     """
-#
-#     """
-#
-#     def __init__(self,
-#                  code: CodedConcept,
-#                  observation_context: Optional[ObservationContext],
-#                  report_narrative: ReportNarrative
-#                  ) -> None:
-#         def __init__(self):
-#             """
-#
-#             """
-#             super().__init__()
-
 
 class BasicDiagnosticTextReport(Template):
 
@@ -4541,7 +4522,6 @@ class BasicDiagnosticTextReport(Template):
             LanguageOfContentItemAndDescendants
         ] = None,
         report_narratives: Optional[Sequence[ReportNarrative]] = None # CID 7001
-        #report_narrative: ReportNarrative, # TID 2002
         # target_region - CID[4031]
 
     ):
@@ -4613,7 +4593,7 @@ class BasicDiagnosticTextReport(Template):
                 item.ContentSequence.append(target_item)
         if report_narratives is not None:
             report_headings = ContainerContentItem(
-                name=codes.LN.Findings,
+                name=codes.DCM.Findings,
                 relationship_type=RelationshipTypeValues.CONTAINS
             )
             report_headings.ContentSequence = ContentSequence()
@@ -4622,7 +4602,7 @@ class BasicDiagnosticTextReport(Template):
                 #     raise TypeError(
                 #         'Report Narratives must be of type ReportNarrative'
                 #     )
-
+                print(f'type report-narrative {type(report_narrative)}')
                 report_headings.ContentSequence.extend(report_narrative)
             item.ContentSequence.append(report_headings)
         super().__init__([item], is_root=True)

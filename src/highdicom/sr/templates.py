@@ -4439,3 +4439,198 @@ class ImageLibrary(Template):
         if len(content) > 0:
             library_item.ContentSequence = content
         self.append(library_item)
+
+class BasicDiagnosticImagingReportObservations(Template):
+    """:dcm:`TID 2001 <part16/chapter_A.html#sect_TID_2001>`
+        Basic Diagnostic Imaging Report Observations
+    """
+
+    def __init__(self,
+                 reference: CodedConcept
+                 ):
+        """
+        reference:
+            CID 7003
+        """
+        super().__init__()
+        if reference not in codes.CID[7003]:
+            raise ValueError(f'code {reference} not in CID 7003')
+        else:
+            self.append()
+
+
+class ReportNarrative(Template):
+
+    """:dcm:`TID 2002 <part16/chapter_A.html#sect_TID_2002>`
+    Report Narrative
+    """
+
+    def __init__(
+        self,
+        codes: Optional[Sequence[CodedConcept]] = None,
+        texts: Optional[Sequence[ContainerContentItem]] = None,
+        observations: Optional[Sequence[BasicDiagnosticImagingReportObservations]] = None
+    ) -> None:
+        """
+
+                Parameters
+                ----------
+                codes: [highdicom.sr.Code], optional
+                    CID 7002
+                texts: [highdicom.sr.TextContentItem], optional
+                observations: [BasicDiagnosticImagingReportObservations] TBD
+                See TID 1501 for contains code
+
+                """  # noqa: E501
+        super().__init__()
+        if codes:  # Need to check type & ensure they are in CID 7002
+            content_codes = ContentSequence()
+            content_codes.extend(codes)
+            self.append(content_codes)
+        if texts:
+            # Need to check for CID 7002
+            for text in texts:
+                print(f'type text {type(text)}')
+                self.append(text)
+        if observations:
+            obs_sequence = ContentSequence()
+            obs_sequence.extend(observations)
+            self.append(obs_sequence)
+
+
+# class ReportHeadings(Template):
+#     """
+#
+#     """
+#
+#     def __init__(self,
+#                  code: CodedConcept,
+#                  observation_context: Optional[ObservationContext],
+#                  report_narrative: ReportNarrative
+#                  ) -> None:
+#         def __init__(self):
+#             """
+#
+#             """
+#             super().__init__()
+
+
+class BasicDiagnosticTextReport(Template):
+
+    """:dcm:`TID 2000 <part16/chapter_A.html#sect_TID_2000>`
+    Basic Diagnostic Imaging Report
+    """
+
+    def __init__(
+        self,
+        observation_context: ObservationContext,
+        procedure_reported: Union[
+            Union[CodedConcept, Code],
+            Sequence[Union[CodedConcept, Code]],
+        ],
+        acquistion_device: Union[
+            Union[CodedConcept, Code],
+            Sequence[Union[CodedConcept, Code]],
+        ] = None,
+        target_region: Union[
+                Union[CodedConcept, Code],
+                Sequence[Union[CodedConcept, Code]],
+        ] = None,
+        title: Optional[Union[CodedConcept, Code]] = None,
+        language_of_content_item_and_descendants: Optional[
+            LanguageOfContentItemAndDescendants
+        ] = None,
+        report_narratives: Optional[Sequence[ReportNarrative]] = None # CID 7001
+        #report_narrative: ReportNarrative, # TID 2002
+        # target_region - CID[4031]
+
+    ):
+        """
+
+        Parameters
+        ----------
+        observation_context: highdicom.sr.ObservationContext
+            description of the observation context
+        procedure_reported: Union[Union[highdicom.sr.CodedConcept, pydicom.sr.coding.Code], Sequence[Union[highdicom.sr.CodedConcept, pydicom.sr.coding.Code]]]
+            one or more coded description(s) of the procedure (see
+            :dcm:`CID 100 <part16/sect_CID_100.html>`
+            "Quantitative Diagnostic Imaging Procedures" for options)
+
+        title: Union[highdicom.sr.CodedConcept, pydicom.sr.coding.Code, None], optional
+            title of the report (see :dcm:`CID 7000 <part16/sect_CID_7000.html>`
+            "Measurement Report Document Titles" for options)
+        language_of_content_item_and_descendants: Union[highdicom.sr.LanguageOfContentItemAndDescendants, None], optional
+            specification of the language of report content items
+            (defaults to English)
+        report_narrative
+
+        """  # noqa: E501
+        if title is None:
+            title = codes.cid7000.DiagnosticImagingReport
+
+        if not isinstance(title, (CodedConcept, Code, )):
+            raise TypeError(
+                'Argument "title" must have type CodedConcept or Code.'
+            )
+        if title not in codes.cid7000:
+            raise ValueError(f'Title must be defined in CID 7000, not {title}')
+        item = ContainerContentItem(
+            name=title,
+            template_id='2000'
+        )
+        item.ContentSequence = ContentSequence()
+        if language_of_content_item_and_descendants is None:
+            language_of_content_item_and_descendants = \
+                LanguageOfContentItemAndDescendants(DEFAULT_LANGUAGE)
+        item.ContentSequence.extend(
+            language_of_content_item_and_descendants
+        )
+        item.ContentSequence.extend(observation_context)
+        if isinstance(procedure_reported, (CodedConcept, Code, )):
+            procedure_reported = [procedure_reported]
+        for procedure in procedure_reported:
+            procedure_item = CodeContentItem(
+                name=codes.DCM.ProcedureReported,
+                value=procedure,
+                relationship_type=RelationshipTypeValues.HAS_CONCEPT_MOD
+            )
+            item.ContentSequence.append(procedure_item)
+        if acquistion_device is not None:
+            if isinstance(acquistion_device, (CodedConcept, Code, )):
+                device_item = CodeContentItem(
+                    name=codes.DCM.AcquisitionDeviceType,
+                    value=acquistion_device,
+                    relationship_type=RelationshipTypeValues.HAS_CONCEPT_MOD
+                    )
+                item.ContentSequence.append(device_item)
+        if target_region is not None:
+            if isinstance(target_region, (CodedConcept, Code,)):
+                target_item = CodeContentItem(
+                    name=codes.DCM.TargetRegion,
+                    value=acquistion_device,
+                    relationship_type=RelationshipTypeValues.HAS_CONCEPT_MOD
+                )
+                item.ContentSequence.append(target_item)
+        if report_narratives is not None:
+            report_headings = ContainerContentItem(
+                name=codes.LN.Findings,
+                relationship_type=RelationshipTypeValues.CONTAINS
+            )
+            report_headings.ContentSequence = ContentSequence()
+            for report_narrative in report_narratives:
+                # if not isinstance(report_narrative, ReportNarrative):
+                #     raise TypeError(
+                #         'Report Narratives must be of type ReportNarrative'
+                #     )
+
+                report_headings.ContentSequence.extend(report_narrative)
+            item.ContentSequence.append(report_headings)
+        super().__init__([item], is_root=True)
+
+
+
+
+
+
+
+

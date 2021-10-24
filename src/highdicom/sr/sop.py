@@ -14,6 +14,7 @@ from pydicom.uid import (
 )
 from pydicom.valuerep import DT, PersonName
 from pydicom._storage_sopclass_uids import (
+    BasicTextSRStorage,
     ComprehensiveSRStorage,
     Comprehensive3DSRStorage,
     EnhancedSRStorage,
@@ -22,7 +23,7 @@ from pydicom._storage_sopclass_uids import (
 from highdicom.base import SOPClass
 from highdicom.sr.coding import CodedConcept
 from highdicom.sr.enum import ValueTypeValues
-from highdicom.sr.templates import MeasurementReport
+from highdicom.sr.templates import MeasurementReport, ReportNarrative
 from highdicom.sr.utils import find_content_items
 from highdicom.sr.value_types import ContentItem, ContentSequence
 from highdicom.valuerep import check_person_name
@@ -420,6 +421,146 @@ class _SR(SOPClass):
     def content(self) -> ContentSequence:
         """highdicom.sr.value_types.ContentSequence: SR document content"""
         return self._content
+
+
+class BasicTextSR(_SR):
+    """SOP class for an Basic Text Report (SR) document, whose
+        content may include textual and a minimal amount of coded information,
+        numeric measurement values, references to SOP Instances (restricted to the
+        leaves of the tree), as well as 2D spatial or temporal regions of interest
+        within such SOP Instances.
+        TBD
+        """
+
+    def __init__(
+            self,
+            evidence: Sequence[Dataset],
+            content: Dataset,
+            series_instance_uid: str,
+            series_number: int,
+            sop_instance_uid: str,
+            instance_number: int,
+            manufacturer: Optional[str] = None,
+            is_complete: bool = False,
+            is_final: bool = False,
+            is_verified: bool = False,
+            institution_name: Optional[str] = None,
+            institutional_department_name: Optional[str] = None,
+            verifying_observer_name: Optional[Union[str, PersonName]] = None,
+            verifying_organization: Optional[str] = None,
+            performed_procedure_codes: Optional[
+                Sequence[Union[Code, CodedConcept]]
+            ] = None,
+            requested_procedures: Optional[Sequence[Dataset]] = None,
+            previous_versions: Optional[Sequence[Dataset]] = None,
+            report_narratives: Optional[Sequence[ReportNarrative]] = None,
+            record_evidence: bool = True,
+            **kwargs: Any
+    ) -> None:
+        """
+        Parameters
+        ----------
+        evidence: Sequence[pydicom.dataset.Dataset]
+            Instances that are referenced in the content tree and from which
+            the created SR document instance should inherit patient and study
+            information
+        content: pydicom.dataset.Dataset
+            Root container content items that should be included in the
+            SR document
+        series_instance_uid: str
+            Series Instance UID of the SR document series
+        series_number: Union[int, None]
+            Series Number of the SR document series
+        sop_instance_uid: str
+            SOP Instance UID that should be assigned to the SR document instance
+        instance_number: int
+            Number that should be assigned to this SR document instance
+        manufacturer: str, optional
+            Name of the manufacturer of the device that creates the SR document
+            instance (in a research setting this is typically the same
+            as `institution_name`)
+        is_complete: bool, optional
+            Whether the content is complete (default: ``False``)
+        is_final: bool, optional
+            Whether the report is the definitive means of communicating the
+            findings (default: ``False``)
+        is_verified: bool, optional
+            Whether the report has been verified by an observer accountable
+            for its content (default: ``False``)
+        institution_name: Union[str, None], optional
+            Name of the institution of the person or device that creates the
+            SR document instance
+        institutional_department_name: Union[str, None], optional
+            Name of the department of the person or device that creates the
+            SR document instance
+        verifying_observer_name: Union[str, pydicom.valuerep.PersonName, None], optional
+            Name of the person that verified the SR document
+            (required if `is_verified`)
+        verifying_organization: Union[str, None], optional
+            Name of the organization that verified the SR document
+            (required if `is_verified`)
+        performed_procedure_codes: Union[List[highdicom.sr.CodedConcept], None], optional
+            Codes of the performed procedures that resulted in the SR document
+        requested_procedures: Union[List[pydicom.dataset.Dataset], None], optional
+            Requested procedures that are being fullfilled by creation of the
+            SR document
+        previous_versions: Union[List[pydicom.dataset.Dataset], None], optional
+            Instances representing previous versions of the SR document
+        record_evidence: bool, optional
+            Whether provided `evidence` should be recorded (i.e. included
+            in Pertinent Other Evidence Sequence) even if not referenced by
+            content items in the document tree (default: ``True``)
+        **kwargs: Any, optional
+            Additional keyword arguments that will be passed to the constructor
+            of `highdicom.base.SOPClass`
+
+        Note
+        ----
+        Each dataset in `evidence` must be part of the same study.
+
+        """  # noqa: E501
+        super().__init__(
+            evidence=evidence,
+            content=content,
+            series_instance_uid=series_instance_uid,
+            series_number=series_number,
+            sop_instance_uid=sop_instance_uid,
+            sop_class_uid=BasicTextSRStorage,
+            instance_number=instance_number,
+            manufacturer=manufacturer,
+            is_complete=is_complete,
+            is_final=is_final,
+            is_verified=is_verified,
+            institution_name=institution_name,
+            institutional_department_name=institutional_department_name,
+            verifying_observer_name=verifying_observer_name,
+            verifying_organization=verifying_organization,
+            performed_procedure_codes=performed_procedure_codes,
+            requested_procedures=requested_procedures,
+            previous_versions=previous_versions,
+            record_evidence=record_evidence,
+            **kwargs
+        )
+        unsupported_content = find_content_items(
+            content,
+            value_type=ValueTypeValues.SCOORD3D,
+            recursive=True
+        )
+        if len(unsupported_content) > 0:
+            raise ValueError(
+                'Basic Text SR does not support content items with '
+                'SCOORD3D value type.'
+            )
+        unsupported_content = find_content_items(
+            content,
+            value_type=ValueTypeValues.SCOORD,
+            recursive=True
+        )
+        if len(unsupported_content) > 0:
+            raise ValueError(
+                'Basic Text SR does not support content items with '
+                'SCOORD value type.'
+            )
 
 
 class EnhancedSR(_SR):

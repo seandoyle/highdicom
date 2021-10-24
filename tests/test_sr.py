@@ -28,6 +28,8 @@ from highdicom.sr import (
     DateContentItem,
     DateTimeContentItem,
     DeviceObserverIdentifyingAttributes,
+    BasicDiagnosticTextReport,
+    BasicTextSR,
     EnhancedSR,
     FindingSite,
     GraphicTypeValues,
@@ -54,6 +56,7 @@ from highdicom.sr import (
     ReferencedSegment,
     ReferencedSegmentationFrame,
     RelationshipTypeValues,
+    ReportNarrative,
     Scoord3DContentItem,
     ScoordContentItem,
     SourceImageForMeasurement,
@@ -3221,6 +3224,153 @@ class TestMeasurementReport(unittest.TestCase):
         )
         assert len(qualitative_evaluations) == 1
         assert isinstance(qualitative_evaluations[0], QualitativeEvaluation)
+
+
+class TestReportNarrative(unittest.TestCase):
+
+    def setUp(self):
+        # self._codes = [
+        #     codes.LN.History,
+        #
+        # ]
+        self._texts = ContainerContentItem(
+                name=codes.LN.History,
+                relationship_type=RelationshipTypeValues.CONTAINS,
+            )
+
+        content = ContentSequence()
+        content.append(
+            TextContentItem(
+                name=codes.LN.History,
+                value="This can be a really long string",
+                relationship_type=RelationshipTypeValues.CONTAINS
+            )
+        )
+        content.append(
+            TextContentItem(
+                name=codes.LN.Impressions,
+                value="Clinician's summary of the report",
+                relationship_type=RelationshipTypeValues.CONTAINS
+            )
+        )
+        self._texts.ContentSequence = content
+
+    def test_construction(self):
+        report_narrative = ReportNarrative(
+            # codes=self._codes,
+            texts=[self._texts]
+        )
+
+        assert len(report_narrative) == 1
+        #assert report_narrative.name == self._name
+        #assert report_narrative.texts == self._texts
+
+
+class TestBasicTextSR(unittest.TestCase):
+
+    def setUp(self):
+        super().setUp()
+        self._ref_dataset = Dataset()
+        self._ref_dataset.PatientID = '1'
+        self._ref_dataset.PatientName = 'Doe^John'
+        self._ref_dataset.PatientBirthDate = '20000101'
+        self._ref_dataset.PatientSex = 'O'
+        self._ref_dataset.SOPClassUID = '1.2.840.10008.5.1.4.1.1.2.2'
+        self._ref_dataset.SOPInstanceUID = generate_uid()
+        self._ref_dataset.SeriesInstanceUID = generate_uid()
+        self._ref_dataset.StudyInstanceUID = generate_uid()
+        self._ref_dataset.AccessionNumber = '2'
+        self._ref_dataset.StudyID = '3'
+        self._ref_dataset.StudyDate = datetime.now().date()
+        self._ref_dataset.StudyTime = datetime.now().time()
+        self._ref_dataset.ReferringPhysicianName = 'doctor'
+
+        self._series_instance_uid = generate_uid()
+        self._series_number = 3
+        self._sop_instance_uid = generate_uid()
+        self._instance_number = 4
+        self._institution_name = 'institute'
+        self._department_name = 'department'
+        self._manufacturer = 'manufacturer'
+        self._texts = ContainerContentItem(
+            name=codes.LN.History,
+            relationship_type=RelationshipTypeValues.CONTAINS,
+        )
+
+        content = ContentSequence()
+        content.append(
+            TextContentItem(
+                name=codes.LN.History,
+                value="This can be a really long string",
+                relationship_type=RelationshipTypeValues.CONTAINS
+            )
+        )
+        content.append(
+            TextContentItem(
+                name=codes.LN.Impressions,
+                value="Clinician's summary of the report",
+                relationship_type=RelationshipTypeValues.CONTAINS
+            )
+        )
+        self._texts.ContentSequence = content
+        observer_person_context = ObserverContext(
+            observer_type=codes.DCM.Person,
+            observer_identifying_attributes=PersonObserverIdentifyingAttributes(
+                name='Bar^Foo'
+            )
+        )
+        observer_device_context = ObserverContext(
+            observer_type=codes.DCM.Device,
+            observer_identifying_attributes=DeviceObserverIdentifyingAttributes(
+                uid=generate_uid()
+            )
+        )
+        observation_context = ObservationContext(
+            observer_person_context=observer_person_context,
+            observer_device_context=observer_device_context,
+        )
+        print(f'BasicTextSR test_construction_with_report_narrative ')
+        report_narrative = ReportNarrative(
+            # codes=self._codes,
+            texts=[self._texts]
+        )
+        self._content = BasicDiagnosticTextReport(
+            observation_context=observation_context,
+            procedure_reported=codes.LN.CTUnspecifiedBodyRegion,
+            report_narratives=[report_narrative]
+
+        )[0]
+
+    def test_construction(self):
+        print(f'BasicTextSR test_construction ')
+        report = BasicTextSR(
+            evidence=[self._ref_dataset],
+            content=self._content,
+            series_instance_uid=self._series_instance_uid,
+            series_number=self._series_number,
+            sop_instance_uid=self._sop_instance_uid,
+            instance_number=self._instance_number,
+            institution_name=self._institution_name,
+            institutional_department_name=self._department_name,
+            manufacturer=self._manufacturer
+        )
+        assert report.SOPClassUID == '1.2.840.10008.5.1.4.1.1.88.11'
+        report.save_as("test_sr.dcm")
+
+
+    def xxtest_evidence_missing(self):
+        with pytest.raises(ValueError):
+            BasicTextSR(
+                evidence=[],
+                content=self._content,
+                series_instance_uid=self._series_instance_uid,
+                series_number=self._series_number,
+                sop_instance_uid=self._sop_instance_uid,
+                instance_number=self._instance_number,
+                institution_name=self._institution_name,
+                institutional_department_name=self._department_name,
+                manufacturer=self._manufacturer
+            )
 
 
 class TestEnhancedSR(unittest.TestCase):

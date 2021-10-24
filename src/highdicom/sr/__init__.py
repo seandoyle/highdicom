@@ -23,12 +23,14 @@ from highdicom.sr.enum import (
     ValueTypeValues,
 )
 from highdicom.sr.sop import (
+    BasicTextSR,
     EnhancedSR,
     ComprehensiveSR,
     Comprehensive3DSR,
 )
 from highdicom.sr.templates import (
     AlgorithmIdentification,
+    BasicDiagnosticTextReport,
     DeviceObserverIdentifyingAttributes,
     ImageLibrary,
     ImageLibraryEntryDescriptors,
@@ -43,6 +45,7 @@ from highdicom.sr.templates import (
     ObservationContext,
     PersonObserverIdentifyingAttributes,
     PlanarROIMeasurementsAndQualitativeEvaluations,
+    ReportNarrative,
     QualitativeEvaluation,
     SubjectContext,
     SubjectContextDevice,
@@ -92,6 +95,7 @@ SOP_CLASS_UIDS = {
 
 __all__ = [
     'AlgorithmIdentification',
+    'BasicTextSR',
     'EnhancedSR',
     'CodedConcept',
     'ContentSequence',
@@ -133,6 +137,7 @@ __all__ = [
     'ReferencedSegment',
     'ReferencedSegmentationFrame',
     'RelationshipTypeValues',
+    'ReportNarrative',
     'ScoordContentItem',
     'Scoord3DContentItem',
     'SourceImageForMeasurement',

@@ -5,18 +5,19 @@ import datetime
 from typing import Any, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
-from pydicom._storage_sopclass_uids import SecondaryCaptureImageStorage
+from pydicom.uid import SecondaryCaptureImageStorage
 from pydicom.dataset import Dataset
 from pydicom.encaps import encapsulate
 from pydicom.sr.codedict import codes
 from pydicom.sr.coding import Code
-from pydicom.valuerep import DA, PersonName, TM
+from pydicom.valuerep import DA, DS, PersonName, TM
 from pydicom.uid import (
     ImplicitVRLittleEndian,
     ExplicitVRLittleEndian,
     RLELossless,
     JPEGBaseline8Bit,
     JPEG2000Lossless,
+    JPEGLSLossless,
 )
 
 from highdicom.base import SOPClass
@@ -72,7 +73,7 @@ class SCImage(SOPClass):
             study_date: Optional[Union[str, datetime.date]] = None,
             study_time: Optional[Union[str, datetime.time]] = None,
             referring_physician_name: Optional[Union[str, PersonName]] = None,
-            pixel_spacing: Optional[Tuple[int, int]] = None,
+            pixel_spacing: Optional[Tuple[float, float]] = None,
             laterality: Optional[Union[str, LateralityValues]] = None,
             patient_orientation: Optional[
                 Union[
@@ -95,7 +96,7 @@ class SCImage(SOPClass):
             specimen_descriptions: Optional[
                 Sequence[SpecimenDescription]
             ] = None,
-            transfer_syntax_uid: str = ImplicitVRLittleEndian,
+            transfer_syntax_uid: str = ExplicitVRLittleEndian,
             **kwargs: Any
         ):
         """
@@ -147,7 +148,7 @@ class SCImage(SOPClass):
            Time of study creation
         referring_physician_name: Union[str, pydicom.valuerep.PersonName, None], optional
             Name of the referring physician
-        pixel_spacing: Union[Tuple[int, int], None], optional
+        pixel_spacing: Union[Tuple[float, float], None], optional
             Physical spacing in millimeter between pixels along the row and
             column dimension
         laterality: Union[str, highdicom.LateralityValues, None], optional
@@ -172,7 +173,8 @@ class SCImage(SOPClass):
             UID of transfer syntax that should be used for encoding of
             data elements. The following compressed transfer syntaxes
             are supported: RLE Lossless (``"1.2.840.10008.1.2.5"``), JPEG
-            2000 Lossless (``"1.2.840.10008.1.2.4.90"``), JPEG Baseline
+            2000 Lossless (``"1.2.840.10008.1.2.4.90"``), JPEG-LS Lossless
+            (``"1.2.840.10008.1.2.4.80"``), and JPEG Baseline
             (``"1.2.840.10008.1.2.4.50"``). Note that JPEG Baseline is a
             lossy compression method that will lead to a loss of detail in
             the image.
@@ -187,6 +189,7 @@ class SCImage(SOPClass):
             RLELossless,
             JPEGBaseline8Bit,
             JPEG2000Lossless,
+            JPEGLSLossless,
         }
         if transfer_syntax_uid not in supported_transfer_syntaxes:
             raise ValueError(
@@ -363,7 +366,13 @@ class SCImage(SOPClass):
                 'Pixel array has an unexpected number of dimensions.'
             )
         if pixel_spacing is not None:
-            self.PixelSpacing = pixel_spacing
+            if len(pixel_spacing) != 2:
+                raise ValueError(
+                    'Argument "pixel_spacing" should have length 2.'
+                )
+            self.PixelSpacing = [
+                DS(ps, auto_format=True) for ps in pixel_spacing
+            ]
 
         encoded_frame = encode_frame(
             pixel_array,

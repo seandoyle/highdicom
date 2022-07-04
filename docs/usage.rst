@@ -189,6 +189,8 @@ image:
     from pydicom.filereader import dcmread
     from pydicom.sr.codedict import codes
     from pydicom.uid import generate_uid
+    from highdicom.sr.content import FindingSite
+    from highdicom.sr.templates import Measurement, TrackingIdentifier
 
     # Path to single-frame CT image instance stored as PS3.10 file
     image_file = Path('/path/to/image/file')
@@ -366,7 +368,7 @@ can capture more detail about how the derived information was obtained and
 what it represents.
 
 In this example, we use a secondary capture to store an image containing a
-labelled bounding box region drawn over a CT image.
+labeled bounding box region drawn over a CT image.
 
 .. code-block:: python
 
@@ -425,7 +427,7 @@ labelled bounding box region drawn over a CT image.
     patient_orientation=['L', 'P']
 
     # Create the secondary capture image. By using the `from_ref_dataset`
-    # constructor, all the patient and study information willl be copied from the
+    # constructor, all the patient and study information will be copied from the
     # original image dataset
     sc_image = hd.sc.SCImage.from_ref_dataset(
         ref_dataset=image_dataset,
@@ -445,6 +447,154 @@ labelled bounding box region drawn over a CT image.
 
     # Save the file
     sc_image.save_as('sc_output.dcm')
+
+
+To save a 3D image as a series of output slices, simply loop over the 2D
+slices and ensure that the individual output instances share a common series
+instance UID.  Here is an example for a CT scan that is in a NumPy array called
+"ct_to_save" where we do not have the original DICOM files on hand. We want to
+overlay a segmentation that is stored in a NumPy array called "seg_out".
+
+.. code-block:: python
+
+    import highdicom as hd
+    import numpy as np
+    import os
+
+    pixel_spacing = [1.0, 1.0]
+    sz = ct_to_save.shape[2]
+    series_instance_uid = hd.UID()
+    study_instance_uid = hd.UID()
+
+    for iz in range(sz):
+        this_slice = ct_to_save[:, :, iz]
+
+        # Window the image to a soft tissue window (center 40, width 400)
+        # and rescale to the range 0 to 255
+        lower = -160
+        upper = 240
+        windowed_image = np.clip(this_slice, lower, upper)
+        windowed_image = (windowed_image - lower) * 255 / (upper - lower)
+
+        # Create RGB channels
+        pixel_array = np.tile(windowed_image[:, :, np.newaxis], [1, 1, 3])
+
+        # transparency level
+        alpha = 0.1
+
+        pixel_array[:, :, 0] = 255 * (1 - alpha) * seg_out[:, :, iz] + alpha * pixel_array[:, :, 0]
+        pixel_array[:, :, 1] = alpha * pixel_array[:, :, 1]
+        pixel_array[:, :, 2] = alpha * pixel_array[:, :, 2]
+
+        patient_orientation = ['L', 'P']
+
+        # Create the secondary capture image
+        sc_image = hd.sc.SCImage(
+            pixel_array=pixel_array.astype(np.uint8),
+            photometric_interpretation=hd.PhotometricInterpretationValues.RGB,
+            bits_allocated=8,
+            coordinate_system=hd.CoordinateSystemNames.PATIENT,
+            study_instance_uid=study_instance_uid,
+            series_instance_uid=series_instance_uid,
+            sop_instance_uid=hd.UID(),
+            series_number=100,
+            instance_number=iz + 1,
+            manufacturer='Manufacturer',
+            pixel_spacing=pixel_spacing,
+            patient_orientation=patient_orientation,
+        )
+
+        sc_image.save_as(os.path.join("output", 'sc_output_' + str(iz) + '.dcm'))
+
+
+Creating Grayscale Softcopy Presentation State (GSPS) Objects
+-------------------------------------------------------------
+
+A presentation state contains information about how another image should be
+rendered, and may include "annotations" in the form of basic shapes, polylines,
+and text overlays. Note that a GSPS is not recommended for storing annotations
+for any purpose except visualization. A structured report would usually be
+preferred for storing annotations for clinical or research purposes.
+
+.. code-block:: python
+
+    import highdicom as hd
+
+    import numpy as np
+    from pydicom import dcmread
+    from pydicom.valuerep import PersonName
+
+
+    # Read in an example CT image
+    image_dataset = dcmread('path/to/image.dcm')
+
+    # Create an annotation containing a polyline
+    polyline = hd.pr.GraphicObject(
+        graphic_type=hd.pr.GraphicTypeValues.POLYLINE,
+        graphic_data=np.array([
+            [10.0, 10.0],
+            [20.0, 10.0],
+            [20.0, 20.0],
+            [10.0, 20.0]]
+        ),  # coordinates of polyline vertices
+        units=hd.pr.AnnotationUnitsValues.PIXEL,  # units for graphic data
+        tracking_id='Finding1',  # site-specific ID
+        tracking_uid=hd.UID()  # highdicom will generate a unique ID
+    )
+
+    # Create a text object annotation
+    text = hd.pr.TextObject(
+        text_value='Important Finding!',
+        bounding_box=np.array(
+            [30.0, 30.0, 40.0, 40.0]  # left, top, right, bottom
+        ),
+        units=hd.pr.AnnotationUnitsValues.PIXEL,  # units for bounding box
+        tracking_id='Finding1Text',  # site-specific ID
+        tracking_uid=hd.UID()  # highdicom will generate a unique ID
+    )
+
+    # Create a single layer that will contain both graphics
+    # There may be multiple layers, and each GraphicAnnotation object
+    # belongs to a single layer
+    layer = hd.pr.GraphicLayer(
+        layer_name='LAYER1',
+        order=1,  # order in which layers are displayed (lower first)
+        description='Simple Annotation Layer',
+    )
+
+    # A GraphicAnnotation may contain multiple text and/or graphic objects
+    # and is rendered over all referenced images
+    annotation = hd.pr.GraphicAnnotation(
+        referenced_images=[image_dataset],
+        graphic_layer=layer,
+        graphic_objects=[polyline],
+        text_objects=[text]
+    )
+
+    # Assemble the components into a GSPS object
+    gsps = hd.pr.GrayscaleSoftcopyPresentationState(
+        referenced_images=[image_dataset],
+        series_instance_uid=hd.UID(),
+        series_number=123,
+        sop_instance_uid=hd.UID(),
+        instance_number=1,
+        manufacturer='Manufacturer',
+        manufacturer_model_name='Model',
+        software_versions='v1',
+        device_serial_number='Device XYZ',
+        content_label='ANNOTATIONS',
+        graphic_layers=[layer],
+        graphic_annotations=[annotation],
+        institution_name='MGH',
+        institutional_department_name='Radiology',
+        content_creator_name=PersonName.from_named_components(
+            family_name='Doe',
+            given_name='John'
+        ),
+    )
+
+    # Save the GSPS file
+    gsps.save_as('gsps.dcm')
 
 
 .. .. _creation-legacy:

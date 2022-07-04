@@ -140,7 +140,7 @@ class ContentItem(Dataset):
                 'Argument "name" must have type CodedConcept or Code.'
             )
         if isinstance(name, Code):
-            name = CodedConcept(*name)
+            name = CodedConcept.from_code(name)
         self.ConceptNameCodeSequence = [name]
         if relationship_type is not None:
             relationship_type = RelationshipTypeValues(relationship_type)
@@ -218,7 +218,7 @@ class ContentItem(Dataset):
         item.ConceptNameCodeSequence = [
             CodedConcept.from_dataset(item.ConceptNameCodeSequence[0])
         ]
-        return item
+        return cast(ContentItem, item)
 
     @property
     def name(self) -> CodedConcept:
@@ -254,7 +254,8 @@ class ContentSequence(DataElementSequence):
         items: Optional[
             Union[Sequence[ContentItem], 'ContentSequence']
         ] = None,
-        is_root: bool = False
+        is_root: bool = False,
+        is_sr: bool = True
     ) -> None:
         """
 
@@ -266,34 +267,23 @@ class ContentSequence(DataElementSequence):
             Whether the sequence is used to contain SR Content Items that are
             intended to be added to an SR document at the root of the document
             content tree
+        is_sr: bool, optional
+            Whether the sequence is use to contain SR Content Items that are
+            intended to be added to an SR document as opposed to other types
+            of IODs based on an acquisition, protocol or workflow context
+            template
 
         """  # noqa: E501
         self._is_root = is_root
-        if items is not None:
-            for i in items:
-                if not isinstance(i, ContentItem):
-                    raise TypeError(
-                        f'Items of "{self.__class__.__name__}" must have '
-                        'type ContentItem.'
-                    )
-                if is_root:
-                    if i.relationship_type is not None:
-                        raise AttributeError(
-                            'Item at the root of the content tree must '
-                            f'have no Relationship Type:\n{i.name}.'
-                        )
-                    if not isinstance(i, ContainerContentItem):
-                        raise TypeError(
-                            'Item at the root of a SR content tree must '
-                            f'have type ContainerContentItem:\n{i.name}'
-                        )
-                else:
-                    if i.relationship_type is None:
-                        raise AttributeError(
-                            'Item to be included in a '
-                            f'{self.__class__.__name__} must have an '
-                            f'established relationship type:\n{i.name}'
-                        )
+        self._is_sr = is_sr
+
+        if is_root and not is_sr:
+            raise ValueError(
+                'Argument "is_root" is True but "is_sr" is False. '
+                'SR content items that are intended to be included at the '
+                'root of a document content tree must also be intended to be '
+                'added to a SR document.'
+            )
 
         # The implementation of this class is quite a hack. It is derived from
         # "pydicom.sequence.Sequence", because this is the only type that is
@@ -320,6 +310,39 @@ class ContentSequence(DataElementSequence):
                 self._lut[i.name].append(i)
         else:
             super().__init__()
+
+        if items is not None:
+            for i in items:
+                if not isinstance(i, ContentItem):
+                    raise TypeError(
+                        f'Items of "{self.__class__.__name__}" must have '
+                        'type ContentItem.'
+                    )
+                if is_root:
+                    if i.relationship_type is not None:
+                        raise AttributeError(
+                            'Item at the root of the content tree must '
+                            f'have no Relationship Type:\n{i.name}.'
+                        )
+                    if not isinstance(i, ContainerContentItem):
+                        raise TypeError(
+                            'Item at the root of a SR content tree must '
+                            f'have type ContainerContentItem:\n{i.name}'
+                        )
+                elif is_sr:
+                    if i.relationship_type is None:
+                        raise AttributeError(
+                            'Item to be included in a '
+                            f'{self.__class__.__name__} must have an '
+                            f'established relationship type:\n{i.name}'
+                        )
+                else:
+                    if i.relationship_type is not None:
+                        raise AttributeError(
+                            'Item of content of acquisition, protocol, or '
+                            'workflow context must have no Relationship Type: '
+                            f'\n{i.name}.'
+                        )
 
     @overload
     def __setitem__(self, idx: int, val: ContentItem) -> None:
@@ -415,7 +438,11 @@ class ContentSequence(DataElementSequence):
             Matched content items
 
         """
-        return ContentSequence(self._lut[name])
+        return ContentSequence(
+            self._lut[name],
+            is_root=False,
+            is_sr=self._is_sr
+        )
 
     def get_nodes(self) -> 'ContentSequence':
         """Get content items that represent nodes in the content tree.
@@ -450,14 +477,14 @@ class ContentSequence(DataElementSequence):
                 )
             )
         if self._is_root:
-            if val.relationship_type is not None:
+            if self._is_sr and val.relationship_type is not None:
                 raise AttributeError(
                     f'Items to be appended to a {self.__class__.__name__} '
                     'that is the root of the SR content tree must not have '
                     'relationship type.'
                 )
         else:
-            if val.relationship_type is None:
+            if self._is_sr and val.relationship_type is None:
                 raise AttributeError(
                     f'Items to be appended to a {self.__class__.__name__} must '
                     'have an established relationship type.'
@@ -522,7 +549,8 @@ class ContentSequence(DataElementSequence):
     def from_sequence(
         cls,
         sequence: Sequence[Dataset],
-        is_root: bool = False
+        is_root: bool = False,
+        is_sr: bool = True
     ) -> 'ContentSequence':
         """Construct object from a sequence of datasets.
 
@@ -534,6 +562,11 @@ class ContentSequence(DataElementSequence):
             Whether the sequence is used to contain SR Content Items that are
             intended to be added to an SR document at the root of the document
             content tree
+        is_sr: bool, optional
+            Whether the sequence is use to contain SR Content Items that are
+            intended to be added to an SR document as opposed to other types
+            of IODs based on an acquisition, protocol or workflow context
+            template
 
         Returns
         -------
@@ -546,18 +579,20 @@ class ContentSequence(DataElementSequence):
             cls._check_dataset(
                 dataset,
                 is_root=is_root,
+                is_sr=is_sr,
                 index=i
             )
             dataset_copy = deepcopy(dataset)
             item = ContentItem._from_dataset_derived(dataset_copy)
             content_items.append(item)
-        return ContentSequence(content_items, is_root=is_root)
+        return ContentSequence(content_items, is_root=is_root, is_sr=is_sr)
 
     @classmethod
     def _from_sequence(
         cls,
         sequence: Sequence[Dataset],
-        is_root: bool = False
+        is_root: bool = False,
+        is_sr: bool = True
     ) -> 'ContentSequence':
         """Construct object from a sequence of datasets.
 
@@ -569,6 +604,11 @@ class ContentSequence(DataElementSequence):
             Whether the sequence is used to contain SR Content Items that are
             intended to be added to an SR document at the root of the document
             content tree
+        is_sr: bool, optional
+            Whether the sequence is use to contain SR Content Items that are
+            intended to be added to an SR document as opposed to other types
+            of IODs based on an acquisition, protocol or workflow context
+            template
 
         Returns
         -------
@@ -581,17 +621,19 @@ class ContentSequence(DataElementSequence):
             cls._check_dataset(
                 dataset,
                 is_root=is_root,
+                is_sr=is_sr,
                 index=i
             )
             item = ContentItem._from_dataset_derived(dataset)
             content_items.append(item)
-        return ContentSequence(content_items, is_root=is_root)
+        return ContentSequence(content_items, is_root=is_root, is_sr=is_sr)
 
     @classmethod
     def _check_dataset(
         cls,
         dataset: Dataset,
         is_root: bool,
+        is_sr: bool,
         index: int
     ) -> None:
         if not isinstance(dataset, Dataset):
@@ -612,9 +654,9 @@ class ContentSequence(DataElementSequence):
                 f'Item #{index} of sequence is not an SR Content Item:\n'
                 f'{dataset}'
             )
-        if not hasattr(dataset, 'RelationshipType') and not is_root:
+        if not hasattr(dataset, 'RelationshipType') and not is_root and is_sr:
             raise AttributeError(
-                'Item #{index} of sequence is not a value SR Content Item '
+                f'Item #{index} of sequence is not a value SR Content Item '
                 'because it is not a root item and lacks the otherwise '
                 f'required attribute "RelationshipType":\n{dataset}'
             )
@@ -626,6 +668,11 @@ class ContentSequence(DataElementSequence):
 
         """
         return self._is_root
+
+    @property
+    def is_sr(self) -> bool:
+        """bool: whether the sequence is intended for use in an SR document"""
+        return self._is_sr
 
 
 class CodeContentItem(ContentItem):
@@ -657,7 +704,7 @@ class CodeContentItem(ContentItem):
                 'Argument "value" must have type CodedConcept or Code.'
             )
         if isinstance(value, Code):
-            value = CodedConcept(*value)
+            value = CodedConcept.from_code(value)
         self.ConceptCodeSequence = [value]
 
     @property
@@ -1232,7 +1279,7 @@ class NumContentItem(ContentItem):
                 'Argument "unit" must have type CodedConcept or Code.'
             )
         if isinstance(unit, Code):
-            unit = CodedConcept(*unit)
+            unit = CodedConcept.from_code(unit)
         measured_value_sequence_item.MeasurementUnitsCodeSequence = [unit]
         self.MeasuredValueSequence.append(measured_value_sequence_item)
         if qualifier is not None:
@@ -1242,7 +1289,7 @@ class NumContentItem(ContentItem):
                     '"Code".'
                 )
             if isinstance(qualifier, Code):
-                qualifier = CodedConcept(*qualifier)
+                qualifier = CodedConcept.from_code(qualifier)
             self.NumericValueQualifierCodeSequence = [qualifier]
 
     @property
@@ -1256,13 +1303,13 @@ class NumContentItem(ContentItem):
 
     @property
     def unit(self) -> CodedConcept:
-        """highdicom.sr.coding.CodedConcept: unit"""
+        """highdicom.sr.CodedConcept: unit"""
         item = self.MeasuredValueSequence[0]
         return item.MeasurementUnitsCodeSequence[0]
 
     @property
     def qualifier(self) -> Union[CodedConcept, None]:
-        """Union[highdicom.sr.coding.CodedConcept, None]: qualifier"""
+        """Union[highdicom.sr.CodedConcept, None]: qualifier"""
         try:
             return self.NumericValueQualifierCodeSequence[0]
         except AttributeError:
@@ -1455,6 +1502,16 @@ class CompositeContentItem(ContentItem):
             UID(item.ReferencedSOPInstanceUID),
         )
 
+    @property
+    def referenced_sop_class_uid(self) -> UID:
+        """highdicom.UID: referenced SOP Class UID"""
+        return UID(self.ReferencedSOPSequence[0].ReferencedSOPClassUID)
+
+    @property
+    def referenced_sop_instance_uid(self) -> UID:
+        """highdicom.UID: referenced SOP Instance UID"""
+        return UID(self.ReferencedSOPSequence[0].ReferencedSOPInstanceUID)
+
     @classmethod
     def from_dataset(cls, dataset: Dataset) -> 'CompositeContentItem':
         """Construct object from an existing dataset.
@@ -1558,23 +1615,17 @@ class ImageContentItem(ContentItem):
 
     @property
     def referenced_sop_class_uid(self) -> UID:
-        """highdicom.UID
-            referenced SOP Class UID
-        """
+        """highdicom.UID: referenced SOP Class UID"""
         return UID(self.ReferencedSOPSequence[0].ReferencedSOPClassUID)
 
     @property
     def referenced_sop_instance_uid(self) -> UID:
-        """highdicom.UID
-            referenced SOP Instance UID
-        """
+        """highdicom.UID: referenced SOP Instance UID"""
         return UID(self.ReferencedSOPSequence[0].ReferencedSOPInstanceUID)
 
     @property
     def referenced_frame_numbers(self) -> Union[List[int], None]:
-        """Union[List[int], None]
-            referenced frame numbers
-        """
+        """Union[List[int], None]: referenced frame numbers"""
         if not hasattr(
             self.ReferencedSOPSequence[0],
             'ReferencedFrameNumber',
@@ -2042,3 +2093,135 @@ class TcoordContentItem(ContentItem):
         _assert_value_type(dataset, ValueTypeValues.TCOORD)
         item = super(TcoordContentItem, cls)._from_dataset_base(dataset)
         return cast(TcoordContentItem, item)
+
+
+class WaveformContentItem(ContentItem):
+
+    """DICOM SR document content item for value type WAVEFORM."""
+
+    def __init__(
+        self,
+        name: Union[Code, CodedConcept],
+        referenced_sop_class_uid: Union[str, UID],
+        referenced_sop_instance_uid: Union[str, UID],
+        referenced_waveform_channels: Optional[
+            Union[int, Sequence[int]]
+        ] = None,
+        relationship_type: Union[str, RelationshipTypeValues, None] = None,
+    ) -> None:
+        """
+        Parameters
+        ----------
+        name: Union[highdicom.sr.CodedConcept, pydicom.sr.coding.Code]
+            Concept name
+        referenced_sop_class_uid: Union[highdicom.UID, str]
+            SOP Class UID of the referenced image object
+        referenced_sop_instance_uid: Union[highdicom.UID, str]
+            SOP Instance UID of the referenced image object
+        referenced_waveform_channels: Union[Sequence[Tuple[int, int]], None], optional
+            Pairs of waveform number (number of item in the Waveform Sequence)
+            and channel definition number (number of item in the Channel
+            Defition Sequence) to which the reference applies in case of a
+            multi-channel waveform
+        relationship_type: Union[highdicom.sr.RelationshipTypeValues, str, None], optional
+            Type of relationship with parent content item
+
+        """  # noqa: E501
+        super(WaveformContentItem, self).__init__(
+            ValueTypeValues.WAVEFORM, name, relationship_type
+        )
+        item = Dataset()
+        item.ReferencedSOPClassUID = str(referenced_sop_class_uid)
+        item.ReferencedSOPInstanceUID = str(referenced_sop_instance_uid)
+        if referenced_waveform_channels is not None:
+            item.ReferencedWaveformChannels = [
+                i
+                for item in referenced_waveform_channels
+                for i in item
+            ]
+        self.ReferencedSOPSequence = [item]
+
+    @property
+    def value(self) -> Tuple[UID, UID]:
+        """Tuple[highdicom.UID, highdicom.UID]:
+            referenced SOP Class UID and SOP Instance UID
+        """
+        item = self.ReferencedSOPSequence[0]
+        return (
+            UID(item.ReferencedSOPClassUID),
+            UID(item.ReferencedSOPInstanceUID),
+        )
+
+    @property
+    def referenced_sop_class_uid(self) -> UID:
+        """highdicom.UID: referenced SOP Class UID"""
+        return UID(self.ReferencedSOPSequence[0].ReferencedSOPClassUID)
+
+    @property
+    def referenced_sop_instance_uid(self) -> UID:
+        """highdicom.UID: referenced SOP Instance UID"""
+        return UID(self.ReferencedSOPSequence[0].ReferencedSOPInstanceUID)
+
+    @property
+    def referenced_waveform_channels(self) -> Union[
+        List[Tuple[int, int]],
+        None
+    ]:
+        """Union[List[Tuple[int, int]], None]: referenced waveform channels"""
+        if not hasattr(
+            self.ReferencedSOPSequence[0],
+            'ReferencedFrameNumber',
+        ):
+            return None
+        val = getattr(
+            self.ReferencedSOPSequence[0],
+            'ReferencedFrameNumber',
+        )
+        return [
+            (
+                int(val[i]),
+                int(val[i + 1]),
+            )
+            for i in range(0, len(val) - 1, 2)
+        ]
+
+    @classmethod
+    def from_dataset(cls, dataset: Dataset) -> 'WaveformContentItem':
+        """Construct object from an existing dataset.
+
+        Parameters
+        ----------
+        dataset: pydicom.dataset.Dataset
+            Dataset representing an SR Content Item with value type WAVEFORM
+
+        Returns
+        -------
+        highdicom.sr.WaveformContentItem
+            Content Item
+
+        """
+        dataset_copy = deepcopy(dataset)
+        return cls._from_dataset(dataset_copy)
+
+    @classmethod
+    def _from_dataset(cls, dataset: Dataset) -> 'WaveformContentItem':
+        """Construct object from an existing dataset.
+
+        Parameters
+        ----------
+        dataset: pydicom.dataset.Dataset
+            Dataset representing an SR Content Item with value type WAVEFORM
+
+        Returns
+        -------
+        highdicom.sr.WaveformContentItem
+            Content Item
+
+        Note
+        ----
+        Does not create a copy, but modifies `dataset`.
+
+        """
+        _assert_value_type(dataset, ValueTypeValues.IMAGE)
+        item = super(WaveformContentItem, cls)._from_dataset_base(dataset)
+        return cast(WaveformContentItem, item)

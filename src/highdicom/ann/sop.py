@@ -2,7 +2,7 @@
 from collections import defaultdict
 from copy import deepcopy
 from operator import eq
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, cast, Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 from pydicom.dataset import Dataset
@@ -21,9 +21,9 @@ from highdicom.ann.enum import (
     PixelOriginInterpretationValues,
 )
 from highdicom.ann.content import AnnotationGroup
-from highdicom.base import SOPClass
+from highdicom.base import SOPClass, _check_little_endian
 from highdicom.sr.coding import CodedConcept
-from highdicom.valuerep import check_person_name
+from highdicom.valuerep import check_person_name, _check_code_string
 
 
 class MicroscopyBulkSimpleAnnotations(SOPClass):
@@ -50,6 +50,7 @@ class MicroscopyBulkSimpleAnnotations(SOPClass):
             str,
             PixelOriginInterpretationValues
         ] = PixelOriginInterpretationValues.VOLUME,
+        content_label: Optional[str] = None,
         **kwargs: Any
     ) -> None:
         """
@@ -90,6 +91,8 @@ class MicroscopyBulkSimpleAnnotations(SOPClass):
         transfer_syntax_uid: str, optional
             UID of transfer syntax that should be used for encoding of
             data elements.
+        content_label: Union[str, None], optional
+            Content label
         **kwargs: Any, optional
             Additional keyword arguments that will be passed to the constructor
             of `highdicom.base.SOPClass`
@@ -139,22 +142,26 @@ class MicroscopyBulkSimpleAnnotations(SOPClass):
         self.copy_patient_and_study_information(src_img)
 
         # Microscopy Bulk Simple Annotations
-        self.ContentLabel = 'Annotation'
+        if content_label is not None:
+            _check_code_string(content_label)
+            self.ContentLabel = content_label
+        else:
+            self.ContentLabel = f'{src_img.Modality}_ANN'
         self.ContentDescription = content_description
         if content_creator_name is not None:
             check_person_name(content_creator_name)
         self.ContentCreatorName = content_creator_name
 
-        annotation_coordinate_type = AnnotationCoordinateTypeValues(
+        coordinate_type = AnnotationCoordinateTypeValues(
             annotation_coordinate_type
         )
-        self.AnnotationCoordinateType = annotation_coordinate_type.value
-        if annotation_coordinate_type == AnnotationCoordinateTypeValues.SCOORD:
+        self.AnnotationCoordinateType = coordinate_type.value
+        if coordinate_type == AnnotationCoordinateTypeValues.SCOORD:
             pixel_origin_interpretation = PixelOriginInterpretationValues(
                 pixel_origin_interpretation
             )
             self.PixelOriginInterpretation = pixel_origin_interpretation.value
-        elif annotation_coordinate_type == AnnotationCoordinateTypeValues.SCOORD3D:
+        elif coordinate_type == AnnotationCoordinateTypeValues.SCOORD3D:
             # Frame of Reference
             self.FrameOfReferenceUID = src_img.FrameOfReferenceUID
             self.PositionReferenceIndicator = getattr(
@@ -402,6 +409,7 @@ class MicroscopyBulkSimpleAnnotations(SOPClass):
             raise ValueError(
                 'Dataset is not a Microscopy Bulk Simple Annotation.'
             )
+        _check_little_endian(dataset)
         ann = deepcopy(dataset)
         ann.__class__ = MicroscopyBulkSimpleAnnotations
 
@@ -410,4 +418,4 @@ class MicroscopyBulkSimpleAnnotations(SOPClass):
             for item in ann.AnnotationGroupSequence
         ]
 
-        return ann
+        return cast(MicroscopyBulkSimpleAnnotations, ann)
